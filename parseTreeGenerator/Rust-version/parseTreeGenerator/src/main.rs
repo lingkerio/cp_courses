@@ -64,11 +64,7 @@ fn possible_splits(i: usize, j: usize, n: usize) -> Vec<Vec<usize>> {
                         .collect();
                     let mut new_acc = acc.clone();
                     new_acc.push(pos);
-                    if acc.is_empty() || pos > *acc.last().unwrap() {
-                        combinations(new_acc, &new_positions, k - 1)
-                    } else {
-                        vec![]
-                    }
+                    combinations(new_acc, &new_positions, k - 1)
                 }).collect()
             }
         }

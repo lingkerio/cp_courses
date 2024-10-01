@@ -55,14 +55,11 @@ let rec possible_splits i j n =
             List.mapi (fun idx pos ->
               let new_positions = List.filteri (fun i _ -> i <> idx) remaining_positions in
               let new_acc = pos :: acc in
-              if acc = [] || pos > List.hd acc then
-                combinations new_acc new_positions (k-1)
-              else
-                []
+              combinations new_acc new_positions (k-1)
             ) remaining_positions
           )
     in
-    combinations [] positions (n - 1)
+    combinations [] positions (n - 1)        
 
 (* Lookup grammar rules for a non-terminal *)
 let lookup_rules nt = 
