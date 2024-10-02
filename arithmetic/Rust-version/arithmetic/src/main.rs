@@ -1,5 +1,3 @@
-use regex::Regex;
-
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
     Number(i32),
@@ -36,13 +34,13 @@ impl Lexer {
 
         // 处理数字
         if current_char.is_digit(10) {
-            let re = Regex::new(r"^\d+").unwrap();
-            let remaining_str = &self.input_string[self.position..];
-            if let Some(mat) = re.find(remaining_str) {
-                let number: i32 = mat.as_str().parse().unwrap();
-                self.position += mat.end();
-                return Some(Token::Number(number));
+            let start = self.position;
+            while self.position < self.input_string.len() && self.input_string[self.position..].chars().next().unwrap().is_digit(10) {
+                self.position += 1;
             }
+            let number_str = &self.input_string[start..self.position];
+            let number: i32 = number_str.parse().unwrap();
+            return Some(Token::Number(number));
         }
 
         // 处理操作符和括号

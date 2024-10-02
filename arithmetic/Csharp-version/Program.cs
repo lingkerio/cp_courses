@@ -37,9 +37,13 @@ class Lexer(string input)
 
             if (char.IsDigit(currentChar))
             {
-                var number = new Regex(@"^\d+").Match(input[_position..]).Value;
+                int start = _position;
+                while (_position < input.Length && char.IsDigit(input[_position]))
+                {
+                    _position++;
+                }
+                var number = input[start.._position];
                 tokens.Add(new Token(TokenType.Number, number));
-                _position += number.Length;
                 continue;
             }
 
