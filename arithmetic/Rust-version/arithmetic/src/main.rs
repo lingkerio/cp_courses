@@ -65,6 +65,12 @@ impl Lexer {
     }
 }
 
+#[derive(Debug)]
+enum Expr {
+    Number(i32),
+    Binary(Token, Box<Expr>, Box<Expr>),
+}
+
 struct Parser {
     tokens: Vec<Token>,
     position: usize,
@@ -141,12 +147,6 @@ impl Parser {
             _ => panic!("Invalid syntax"),
         }
     }
-}
-
-#[derive(Debug)]
-enum Expr {
-    Number(i32),
-    Binary(Token, Box<Expr>, Box<Expr>),
 }
 
 fn evaluate(node: &Expr) -> i32 {
