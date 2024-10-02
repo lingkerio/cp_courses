@@ -34,11 +34,11 @@ impl Lexer {
 
         // 处理数字
         if current_char.is_digit(10) {
-            let start = self.position;
-            while self.position < self.input_string.len() && self.input_string[self.position..].chars().next().unwrap().is_digit(10) {
-                self.position += 1;
-            }
-            let number_str = &self.input_string[start..self.position];
+            let number_str: String = self.input_string[self.position..]
+                .chars()
+                .take_while(|c| c.is_digit(10))
+                .collect();
+            self.position += number_str.len();
             let number: i32 = number_str.parse().unwrap();
             return Some(Token::Number(number));
         }
