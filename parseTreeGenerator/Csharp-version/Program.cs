@@ -142,21 +142,30 @@ namespace parseTreeGenerator
 
         static string TreeToString(string indent, Node tree)
         {
+            var sb = new System.Text.StringBuilder();
+            TreeToString(sb, indent, tree);
+            return sb.ToString();
+        }
+
+        static void TreeToString(System.Text.StringBuilder sb, string indent, Node tree)
+        {
             switch (tree)
             {
                 case Leaf leaf:
-                    return $"{indent}{leaf.Value}\n";
+                    sb.AppendLine($"{indent}{leaf.Value}");
+                    break;
                 case Internal internalNode:
-                    string result = $"{indent}{internalNode.Label}\n";
+                    sb.AppendLine($"{indent}{internalNode.Label}");
                     foreach (var child in internalNode.Children)
                     {
-                        result += TreeToString(indent + "  ", child);
+                        TreeToString(sb, indent + "  ", child);
                     }
-                    return result;
+                    break;
                 default:
                     throw new Exception("未知的节点类型");
             }
         }
+
 
         static List<List<int>> PossibleSplits(int i, int j, int n)
         {
