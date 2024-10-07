@@ -10,8 +10,15 @@ let grammar = [
   ("P", [["in"]; ["with"]])
 ]
 
-(* Collect non-terminals and terminals *)
-let non_terminals = List.fold_left (fun acc (lhs, _) -> lhs :: acc) [] grammar
+(* Helper function to add an element to a list if it's not already present *)
+let add_unique elem lst =
+  if List.mem elem lst then lst else elem :: lst
+
+(* Collect non-terminals *)
+let non_terminals = 
+  List.fold_left (fun acc (lhs, _) -> add_unique lhs acc) [] grammar
+
+(* Collect terminals *)
 let terminals = 
   List.fold_left 
     (fun acc (_, prods) -> 
@@ -19,7 +26,7 @@ let terminals =
         (fun acc prod -> 
           List.fold_left 
             (fun acc sym -> 
-              if List.mem sym non_terminals then acc else sym :: acc) 
+              if List.mem sym non_terminals then acc else add_unique sym acc) 
             acc prod) 
         acc prods) 
     [] grammar

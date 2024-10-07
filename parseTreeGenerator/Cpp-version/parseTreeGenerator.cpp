@@ -1,14 +1,12 @@
+#include <functional>
 #include <iostream>
+#include <iterator>
+#include <sstream>
+#include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <string>
-#include <sstream>
-#include <algorithm>
-#include <iterator>
-#include <variant>
-#include <tuple>
-#include <functional>
 
 // Define overloaded for std::visit
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -73,7 +71,7 @@ std::vector<std::vector<size_t>> possible_splits(size_t i, size_t j, size_t n) {
                     auto pos = remaining_positions[idx];
                     std::vector<size_t> new_positions;
                     for (size_t i = 0; i < remaining_positions.size(); ++i) {
-                        if (i != idx) {
+                        if (i > idx) {
                             new_positions.push_back(remaining_positions[i]);
                         }
                     }

@@ -60,7 +60,7 @@ fn possible_splits(i: usize, j: usize, n: usize) -> Vec<Vec<usize>> {
             } else {
                 remaining_positions.iter().enumerate().flat_map(|(idx, &pos)| {
                     let new_positions: Vec<usize> = remaining_positions.iter().enumerate()
-                        .filter_map(|(i, &p)| if i != idx { Some(p) } else { None })
+                        .filter_map(|(i, &p)| if i > idx { Some(p) } else { None })
                         .collect();
                     let mut new_acc = acc.clone();
                     new_acc.push(pos);
