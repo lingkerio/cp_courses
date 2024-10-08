@@ -98,159 +98,107 @@ namespace parseTreeGenerator
                 },
             };
 
+            // 消除epsilon产生式
+            var (newGrammar, newProductions) = RemoveEpsilons(grammar);
+
             // 收集非终结符和终结符
-            var nonTerminals = new HashSet<string>(grammar.Keys);
-            var terminals = new HashSet<string>();
-            foreach (var prods in grammar.Values)
-            {
-                foreach (var prod in prods)
-                {
-                    foreach (var sym in prod)
-                    {
-                        if (!nonTerminals.Contains(sym))
-                        {
-                            terminals.Add(sym);
-                        }
-                    }
-                }
-            }
+            var nonTerminals = new HashSet<string>(newGrammar.Keys);
+            var terminals = new HashSet<string>(newGrammar.Values.SelectMany(prods => prods.SelectMany(prod => prod)).Where(sym => !nonTerminals.Contains(sym)));
 
             // 输入句子
-            string sentence = "the dog saw a cat in the park";
-            string[] tokens = sentence.Split(' ');
+            var sentence = "the dog saw a cat in the park";
+            var tokens = sentence.Split(' ');
 
-            // 解析句子
+            // 解析句子从 'S' 开始
             var memo = new Dictionary<(string, int, int), List<Node>>();
-            var trees = Parse(
-                grammar,
-                tokens,
-                nonTerminals,
-                terminals,
-                memo,
-                "S",
-                0,
-                tokens.Length
-            );
+            var trees = Parse(newGrammar, tokens, nonTerminals, terminals, memo, "S", 0, tokens.Length);
 
-            // 输出所有可能的解析树
-            foreach (var (tree, idx) in trees.Enumerate())
+            // 打印所有可能的解析树
+            for (int idx = 0; idx < trees.Count; idx++)
             {
-                Console.WriteLine($"解析树 {idx + 1}:");
-                Console.Write(TreeToString("", tree));
+                Console.WriteLine($"Parse tree {idx + 1}:");
+                Console.WriteLine(TreeToString("", trees[idx]));
+                Console.WriteLine($"Typst tree code {idx + 1}:");
+                Console.WriteLine($"#{TreeToTypst("", trees[idx])}");
             }
         }
 
-        static string TreeToString(string indent, Node tree)
+        static (Dictionary<string, List<List<string>>>, List<(string, List<string>)>) RemoveEpsilons(Dictionary<string, List<List<string>>> grammar)
         {
-            var sb = new System.Text.StringBuilder();
-            TreeToString(sb, indent, tree);
-            return sb.ToString();
-        }
+            var epsNonterms = FindEpsNonterms(grammar);
+            var newGrammar = new Dictionary<string, List<List<string>>>();
 
-        static void TreeToString(System.Text.StringBuilder sb, string indent, Node tree)
-        {
-            switch (tree)
+            foreach (var (lhs, rhsList) in grammar)
             {
-                case Leaf leaf:
-                    sb.AppendLine($"{indent}{leaf.Value}");
-                    break;
-                case Internal internalNode:
-                    sb.AppendLine($"{indent}{internalNode.Label}");
-                    foreach (var child in internalNode.Children)
-                    {
-                        TreeToString(sb, indent + "  ", child);
-                    }
-                    break;
-                default:
-                    throw new Exception("未知的节点类型");
+                var newRhsList = new List<List<string>>();
+                foreach (var rhs in rhsList)
+                {
+                    if (rhs.SequenceEqual(["ε"]))
+                        continue;
+
+                    var newRhs = RemoveEpsFromRhs(rhs, epsNonterms);
+                    newRhsList.AddRange(newRhs);
+                }
+                newGrammar[lhs] = newRhsList;
             }
+
+            var newProductions = GenerateNewProductions(newGrammar, epsNonterms);
+            return (newGrammar, newProductions);
         }
 
-
-        static List<List<int>> PossibleSplits(int i, int j, int n)
+        static HashSet<string> FindEpsNonterms(Dictionary<string, List<List<string>>> grammar)
         {
-            if (n == 1)
+            var epsNonterms = new HashSet<string>();
+            foreach (var (lhs, rhsList) in grammar)
             {
-                if (i < j)
+                if (rhsList.Any(rhs => rhs.SequenceEqual(["ε"])))
                 {
-                    return
-                    [
-                        [],
-                    ];
+                    epsNonterms.Add(lhs);
                 }
-                else
-                {
-                    return [];
-                }
+            }
+            return epsNonterms;
+        }
+
+        static List<List<string>> RemoveEpsFromRhs(List<string> rhsList, HashSet<string> epsNonterms)
+        {
+            if (rhsList.Count == 0)
+                return [[]];
+
+            var hd = rhsList.First();
+            var tl = rhsList.Skip(1).ToList();
+            var rest = RemoveEpsFromRhs(tl, epsNonterms);
+
+            var result = new List<List<string>>();
+            if (epsNonterms.Contains(hd))
+            {
+                result.AddRange(rest);
+                result.AddRange(rest.Select(r => new List<string> { hd }.Concat(r).ToList()));
             }
             else
             {
-                var positions = Enumerable.Range(i + 1, j - i - 1).ToList();
-                return Combinations(positions, n - 1);
-            }
-        }
-
-        static List<List<int>> Combinations(List<int> positions, int k)
-        {
-            return CombinationsHelper(positions, 0, k);
-        }
-
-        static List<List<int>> CombinationsHelper(List<int> positions, int start, int k)
-        {
-            var results = new List<List<int>>();
-            if (k == 0)
-            {
-                results.Add([]);
-            }
-            else
-            {
-                for (int i = start; i < positions.Count; i++)
-                {
-                    int pos = positions[i];
-                    var restCombinations = CombinationsHelper(positions, i + 1, k - 1);
-                    foreach (var comb in restCombinations)
-                    {
-                        var newComb = new List<int> { pos };
-                        newComb.AddRange(comb);
-                        results.Add(newComb);
-                    }
-                }
-            }
-            return results;
-        }
-
-        static List<List<T>> CartesianProduct<T>(List<List<T>> sequences)
-        {
-            var result = new List<List<T>> { new() };
-            foreach (var sequence in sequences)
-            {
-                var temp = new List<List<T>>();
-                foreach (var acc in result)
-                {
-                    foreach (var item in sequence)
-                    {
-                        var newList = new List<T>(acc) { item };
-                        temp.Add(newList);
-                    }
-                }
-                result = temp;
+                result.AddRange(rest.Select(r => new List<string> { hd }.Concat(r).ToList()));
             }
             return result;
         }
 
-        static List<List<string>> LookupRules(
-            Dictionary<string, List<List<string>>> grammar,
-            string nt
-        )
+        static List<(string, List<string>)> GenerateNewProductions(Dictionary<string, List<List<string>>> grammar, HashSet<string> epsNonterms)
         {
-            if (grammar.TryGetValue(nt, out var rules))
+            var newProductions = new List<(string, List<string>)>();
+            foreach (var (lhs, rhsList) in grammar)
             {
-                return rules;
+                foreach (var rhs in rhsList)
+                {
+                    if (rhs.Any(sym => epsNonterms.Contains(sym)))
+                    {
+                        var newRhs = rhs.Where(sym => !epsNonterms.Contains(sym)).ToList();
+                        if (newRhs.Count != 0 && !newProductions.Contains((lhs, newRhs)))
+                        {
+                            newProductions.Add((lhs, newRhs));
+                        }
+                    }
+                }
             }
-            else
-            {
-                return [];
-            }
+            return newProductions;
         }
 
         static List<Node> Parse(
@@ -261,22 +209,17 @@ namespace parseTreeGenerator
             Dictionary<(string, int, int), List<Node>> memo,
             string nt,
             int i,
-            int j
-        )
+            int j)
         {
             var key = (nt, i, j);
-            if (memo.TryGetValue(key, out var result))
-            {
-                return result;
-            }
+            if (memo.TryGetValue(key, out List<Node>? value))
+                return value;
 
             var results = new List<Node>();
-
             if (i >= j)
-            {
-                // 无结果
-            }
-            else if (terminals.Contains(nt))
+                return results;
+
+            if (terminals.Contains(nt))
             {
                 if (i + 1 == j && tokens[i] == nt)
                 {
@@ -285,10 +228,10 @@ namespace parseTreeGenerator
             }
             else if (nonTerminals.Contains(nt))
             {
-                var rules = LookupRules(grammar, nt);
+                var rules = grammar[nt];
                 foreach (var production in rules)
                 {
-                    int n = production.Count;
+                    var n = production.Count;
                     if (n == 1)
                     {
                         var symbol = production[0];
@@ -301,33 +244,18 @@ namespace parseTreeGenerator
                         }
                         else
                         {
-                            var subTrees = Parse(
-                                grammar,
-                                tokens,
-                                nonTerminals,
-                                terminals,
-                                memo,
-                                symbol,
-                                i,
-                                j
-                            );
-                            foreach (var subTree in subTrees)
-                            {
-                                results.Add(new Internal(nt, [subTree]));
-                            }
+                            var subTrees = Parse(grammar, tokens, nonTerminals, terminals, memo, symbol, i, j);
+                            results.AddRange(subTrees.Select(subTree => new Internal(nt, [subTree])));
                         }
                     }
                     else
                     {
-                        var splitsList = PossibleSplits(i, j, n);
-                        foreach (var splits in splitsList)
+                        foreach (var splits in PossibleSplits(i, j, n))
                         {
-                            var positions = new List<int> { i };
-                            positions.AddRange(splits);
-                            positions.Add(j);
-
+                            var positions = new List<int> { i }.Concat(splits).Concat([j]).ToList();
                             var children = new List<List<Node>>();
-                            bool failed = false;
+                            var failed = false;
+
                             for (int idx = 0; idx < n; idx++)
                             {
                                 var ai = production[idx];
@@ -365,6 +293,86 @@ namespace parseTreeGenerator
 
             memo[key] = results;
             return results;
+        }
+
+        static List<List<int>> PossibleSplits(int i, int j, int n)
+        {
+            if (n == 1)
+            {
+                return i < j ? [new()] : [];
+            }
+            else
+            {
+                var positions = Enumerable.Range(i + 1, j - i - 1).ToList();
+                return Combinations([], positions, n - 1);
+            }
+        }
+
+        static List<List<int>> Combinations(List<int> acc, List<int> remainingPositions, int k)
+        {
+            if (k == 0)
+            {
+                return [acc];
+            }
+            else
+            {
+                var result = new List<List<int>>();
+                for (int idx = 0; idx < remainingPositions.Count; idx++)
+                {
+                    var pos = remainingPositions[idx];
+                    var newPositions = remainingPositions.Skip(idx + 1).ToList();
+                    var newAcc = new List<int>(acc) { pos };
+                    var subCombinations = Combinations(newAcc, newPositions, k - 1);
+                    result.AddRange(subCombinations);
+                }
+                return result;
+            }
+        }
+
+        static List<List<Node>> CartesianProduct(List<List<Node>> lists)
+        {
+            IEnumerable<IEnumerable<Node>> result = [[]];
+            foreach (var list in lists)
+            {
+                result = from seq in result
+                         from item in list
+                         select seq.Concat([item]);
+            }
+            return result.Select(seq => seq.ToList()).ToList();
+        }
+
+        static string TreeToString(string indent, Node tree)
+        {
+            switch (tree)
+            {
+                case Leaf leaf:
+                    return $"{indent}{leaf.Value}\n";
+                case Internal internalNode:
+                    var result = $"{indent}{internalNode.Label}\n";
+                    foreach (var child in internalNode.Children)
+                    {
+                        result += TreeToString(indent + "  ", child);
+                    }
+                    return result;
+                default:
+                    throw new InvalidOperationException("Unknown node type");
+            }
+        }
+
+        static string TreeToTypst(string indent, Node tree)
+        {
+            switch (tree)
+            {
+                case Leaf leaf:
+                    return $"{indent}tree(\"{leaf.Value}\")";
+                case Internal internalNode:
+                    var newIndent = indent + "  ";
+                    var childrenTypst = internalNode.Children.Select(child => TreeToTypst(newIndent, child)).ToList();
+                    var childrenStr = string.Join(",\n", childrenTypst);
+                    return $"{indent}tree(\"{internalNode.Label}\",\n{childrenStr}\n{indent})";
+                default:
+                    throw new InvalidOperationException("Unknown node type");
+            }
         }
     }
 }

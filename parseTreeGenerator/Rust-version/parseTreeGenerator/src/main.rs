@@ -21,6 +21,18 @@ fn tree_to_string(indent: &str, tree: &Node) -> String {
     }
 }
 
+fn tree_to_typst(indent: &str, tree: &Node) -> String {
+    match tree {
+        Node::Leaf(s) => format!("{indent}tree(\"{}\")", s),
+        Node::Internal(label, children) => {
+            let new_indent = format!("{indent}  ");
+            let children_typst: Vec<String> = children.iter().map(|child| tree_to_typst(&new_indent, child)).collect();
+            let children_str = children_typst.join(",\n");
+            format!("{indent}tree(\"{}\",\n{}\n{indent})", label, children_str)
+        }
+    }
+}
+
 // fn possible_splits(i: usize, j: usize, n: usize) -> Vec<Vec<usize>> {
 //     if n == 1 {
 //         if i < j {
@@ -74,6 +86,88 @@ fn possible_splits(i: usize, j: usize, n: usize) -> Vec<Vec<usize>> {
 
 fn lookup_rules(grammar: &Grammar, nt: &str) -> Vec<Vec<String>> {
     grammar.get(nt).cloned().unwrap_or_else(Vec::new)
+}
+
+fn remove_epsilons(grammar: &Grammar) -> (Grammar, Vec<(String, Vec<String>)>) {
+    fn remove_eps_from_rhs(rhs_list: &[String], eps_nonterms: &HashSet<String>) -> Vec<Vec<String>> {
+        match rhs_list.split_first() {
+            None => vec![vec![]],
+            Some((hd, tl)) => {
+                let rest = remove_eps_from_rhs(tl, eps_nonterms);
+                if eps_nonterms.contains(hd) {
+                    let mut new_rest = rest.clone();
+                    for r in &rest {
+                        let mut new_r = vec![hd.clone()];
+                        new_r.extend(r.clone());
+                        new_rest.push(new_r);
+                    }
+                    new_rest
+                } else {
+                    rest.into_iter().map(|r| {
+                        let mut new_r = vec![hd.clone()];
+                        new_r.extend(r);
+                        new_r
+                    }).collect()
+                }
+            }
+        }
+    }
+
+    fn find_eps_nonterms(grammar: &Grammar) -> HashSet<String> {
+        grammar.iter().fold(HashSet::new(), |mut acc, (lhs, rhs_list)| {
+            if rhs_list.iter().any(|rhs| rhs == &vec!["ε".to_string()]) {
+                acc.insert(lhs.clone());
+            }
+            acc
+        })
+    }
+
+    fn update_eps_nonterms(eps_nonterms: &HashSet<String>, grammar: &Grammar) -> HashSet<String> {
+        let mut new_eps_nonterms = eps_nonterms.clone();
+        for (lhs, rhs_list) in grammar {
+            if rhs_list.iter().any(|rhs| rhs.iter().all(|sym| eps_nonterms.contains(sym))) {
+                new_eps_nonterms.insert(lhs.clone());
+            }
+        }
+        if new_eps_nonterms.len() > eps_nonterms.len() {
+            update_eps_nonterms(&new_eps_nonterms, grammar)
+        } else {
+            new_eps_nonterms
+        }
+    }
+
+    let eps_nonterms = update_eps_nonterms(&find_eps_nonterms(grammar), grammar);
+
+    let new_grammar = grammar.iter().fold(HashMap::new(), |mut acc, (lhs, rhs_list)| {
+        let new_rhs_list = rhs_list.iter().fold(vec![], |mut acc_rhs, rhs| {
+            if rhs == &vec!["ε".to_string()] {
+                acc_rhs
+            } else {
+                acc_rhs.extend(remove_eps_from_rhs(rhs, &eps_nonterms));
+                acc_rhs
+            }
+        });
+        acc.insert(lhs.clone(), new_rhs_list);
+        acc
+    });
+
+    fn generate_new_productions(grammar: &Grammar, eps_nonterms: &HashSet<String>, acc: Vec<(String, Vec<String>)>) -> Vec<(String, Vec<String>)> {
+        grammar.iter().fold(acc, |mut acc, (lhs, rhs_list)| {
+            for rhs in rhs_list {
+                if rhs.iter().any(|sym| eps_nonterms.contains(sym)) {
+                    let new_rhs: Vec<String> = rhs.iter().filter(|sym| !eps_nonterms.contains(*sym)).cloned().collect();
+                    if !new_rhs.is_empty() && !acc.contains(&(lhs.clone(), new_rhs.clone())) {
+                        acc.push((lhs.clone(), new_rhs));
+                    }
+                }
+            }
+            acc
+        })
+    }
+
+    let new_productions = generate_new_productions(&new_grammar, &eps_nonterms, vec![]);
+
+    (new_grammar, new_productions)
 }
 
 fn parse(
@@ -165,6 +259,9 @@ fn main() {
         ("P".to_owned(), vec![vec!["in".to_owned()], vec!["with".to_owned()]]),
     ].iter().cloned().collect();
 
+    // Eliminate epsilon productions
+    let (grammar, new_productions) = remove_epsilons(&grammar);
+
     // Collect non-terminals and terminals
     let non_terminals: HashSet<String> = grammar.keys().cloned().collect();
     let terminals: HashSet<String> = grammar.values().flat_map(|prods| {
@@ -185,6 +282,8 @@ fn main() {
     for (idx, tree) in trees.iter().enumerate() {
         println!("Parse tree {}:", idx + 1);
         print!("{}", tree_to_string("", tree));
+        println!("Typst tree code {}:", idx + 1);
+        println!("#{}", tree_to_typst("", tree));
     }
 }
 

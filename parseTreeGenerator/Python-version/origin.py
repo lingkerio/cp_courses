@@ -12,6 +12,60 @@ grammar = {
     'P': [['in'], ['with']]
 }
 
+# Function to eliminate epsilon productions
+def remove_epsilons(grammar):
+    def remove_eps_from_rhs(rhs_list, eps_nonterms):
+        if not rhs_list:
+            return [[]]
+        hd, *tl = rhs_list
+        rest = remove_eps_from_rhs(tl, eps_nonterms)
+        if hd in eps_nonterms:
+            new_rest = rest + [[hd] + r for r in rest]
+            return new_rest
+        else:
+            return [[hd] + r for r in rest]
+
+    def find_eps_nonterms(grammar):
+        return {lhs for lhs, rhs_list in grammar.items() if any(rhs == ['ε'] for rhs in rhs_list)}
+
+    def update_eps_nonterms(eps_nonterms, grammar):
+        new_eps_nonterms = eps_nonterms.copy()
+        for lhs, rhs_list in grammar.items():
+            if any(all(sym in eps_nonterms for sym in rhs) for rhs in rhs_list):
+                new_eps_nonterms.add(lhs)
+        if len(new_eps_nonterms) > len(eps_nonterms):
+            return update_eps_nonterms(new_eps_nonterms, grammar)
+        else:
+            return new_eps_nonterms
+
+    eps_nonterms = update_eps_nonterms(find_eps_nonterms(grammar), grammar)
+
+    new_grammar = {}
+    for lhs, rhs_list in grammar.items():
+        new_rhs_list = []
+        for rhs in rhs_list:
+            if rhs == ['ε']:
+                continue
+            new_rhs_list.extend(remove_eps_from_rhs(rhs, eps_nonterms))
+        new_grammar[lhs] = new_rhs_list
+
+    def generate_new_productions(grammar, eps_nonterms):
+        new_productions = []
+        for lhs, rhs_list in grammar.items():
+            for rhs in rhs_list:
+                if any(sym in eps_nonterms for sym in rhs):
+                    new_rhs = [sym for sym in rhs if sym not in eps_nonterms]
+                    if new_rhs and (lhs, new_rhs) not in new_productions:
+                        new_productions.append((lhs, new_rhs))
+        return new_productions
+
+    new_productions = generate_new_productions(new_grammar, eps_nonterms)
+
+    return new_grammar, new_productions
+
+# Eliminate epsilon productions
+grammar, new_productions = remove_epsilons(grammar)
+
 # Collect non-terminals and terminals
 non_terminals = set(grammar.keys())
 rhs_symbols = set()
@@ -44,6 +98,14 @@ class ParseTree:
             else:
                 result += indent + '  ' + str(child) + '\n'
         return result
+
+    def to_typst(self, indent=''):
+        if not self.children:
+            return f'{indent}tree("{self.label}")'
+        new_indent = indent + '  '
+        children_typst = [child.to_typst(new_indent) for child in self.children]
+        children_str = ',\n'.join(children_typst)
+        return f'{indent}tree("{self.label}",\n{children_str}\n{indent})'
 
 # Parsing function
 def parse(N, i, j):
@@ -119,3 +181,5 @@ trees = parse('S', 0, len(tokens))
 for idx, tree in enumerate(trees):
     print(f"Parse tree {idx+1}:")
     print(tree.to_string())
+    print(f"Typst tree code {idx+1}:")
+    print(f"#{tree.to_typst()}")
