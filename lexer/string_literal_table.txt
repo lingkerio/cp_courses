@@ -1,0 +1,88 @@
+1: 
+2: Error in Identifier
+3: as
+4: break
+5: const
+6: continue
+7: crate
+8: else
+9: enum
+10: extern
+11: false
+12: fn
+13: for
+14: if
+15: impl
+16: in
+17: let
+18: loop
+19: match
+20: mod
+21: move
+22: mut
+23: pub
+24: ref
+25: return
+26: self
+27: static
+28: struct
+29: super
+30: trait
+31: true
+32: type
+33: unsafe
+34: use
+35: where
+36: while
+37: async
+38: await
+39: dyn
+40: abstract
+41: become
+42: box
+43: do
+44: final
+45: macro
+46: override
+47: priv
+48: typeof
+49: unsized
+50: virtual
+51: yield
+52: try
+53: macro_rules
+54: union
+55: Error in char literal, invalid escape sequence
+56: Error in char literal: multiple characters
+57: Error in char literal: No Closing Quote
+58: Error in char literal: empty literal
+59: Error in LifetimeOrLabel literal
+60: Error in String Literal: No Closing Quote
+61: ..
+62: Error in Integer Range
+63: Error in Float Literal
+64: Error in identifier starting with number
+65: Error in Integer Literal with alphabets
+66: Unknown Token
+67: {}: {}
+68: source.txt
+69: identifier_table.txt
+70: char_literal_table.txt
+71: string_literal_table.txt
+72: integer_literal_table.txt
+73: float_literal_table.txt
+74: output.txt
+75: Identifier({})
+76: \n
+77: \r
+78: \t
+79: \\
+80: \'
+81: \"
+82: CharLiteral({})
+83: StringLiteral({})
+84: IntegerLiteral({})
+85: FloatLiteral({})
+86: {:?}
+87: {}
+88: Execution time: {:?}
