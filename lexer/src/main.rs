@@ -868,6 +868,81 @@ impl<R: Read> Lexer<R> {
         }
         result
     }
+
+    pub fn parse_all(&mut self) -> io::Result<ParseResult> {
+        let mut identifier_table: HashMap<String, usize> = HashMap::new();
+        let mut char_literal_table: HashMap<char, usize> = HashMap::new();
+        let mut string_literal_table: HashMap<String, usize> = HashMap::new();
+        let mut integer_literal_table: HashMap<String, usize> = HashMap::new();
+        let mut float_literal_table: HashMap<String, usize> = HashMap::new();
+
+        let mut identifier_next_id = 1;
+        let mut char_literal_next_id = 1;
+        let mut string_literal_next_id = 1;
+        let mut integer_literal_next_id = 1;
+        let mut float_literal_next_id = 1;
+
+        let mut token_stream = Vec::new();
+
+        while let Some(token) = self.next_token() {
+            let token_output = match token {
+                TokenType::Identifier(ident) => {
+                    let id = identifier_table.entry(ident.clone()).or_insert_with(|| {
+                        let id = identifier_next_id;
+                        identifier_next_id += 1;
+                        id
+                    });
+                    format!("Identifier({})", id)
+                }
+                TokenType::CharLiteral(ch) => {
+                    let id = char_literal_table.entry(ch).or_insert_with(|| {
+                        let id = char_literal_next_id;
+                        char_literal_next_id += 1;
+                        id
+                    });
+                    format!("CharLiteral({})", id)
+                }
+                TokenType::StringLiteral(s) => {
+                    let id = string_literal_table.entry(s.clone()).or_insert_with(|| {
+                        let id = string_literal_next_id;
+                        string_literal_next_id += 1;
+                        id
+                    });
+                    format!("StringLiteral({})", id)
+                }
+                TokenType::IntegerLiteral(i) => {
+                    let id = integer_literal_table.entry(i.clone()).or_insert_with(|| {
+                        let id = integer_literal_next_id;
+                        integer_literal_next_id += 1;
+                        id
+                    });
+                    format!("IntegerLiteral({})", id)
+                }
+                TokenType::FloatLiteral(f) => {
+                    let id = float_literal_table.entry(f.clone()).or_insert_with(|| {
+                        let id = float_literal_next_id;
+                        float_literal_next_id += 1;
+                        id
+                    });
+                    format!("FloatLiteral({})", id)
+                }
+                TokenType::Whitespace | TokenType::Comment(_) => continue,
+                _ => format!("{:?}", token),
+            };
+
+            // 将生成的 Token 内容添加到 token_stream 中
+            token_stream.push(token_output);
+        }
+
+        Ok(ParseResult {
+            identifier_table,
+            char_literal_table,
+            string_literal_table,
+            integer_literal_table,
+            float_literal_table,
+            token_stream,
+        })
+    }
 }
 
 struct TableWriter {
@@ -899,6 +974,15 @@ fn process_literal<T: Eq + Hash, F: FnOnce() -> String>(
         writer.write_entry(id, format_value());
         id
     })
+}
+
+struct ParseResult {
+    identifier_table: HashMap<String, usize>,
+    char_literal_table: HashMap<char, usize>,
+    string_literal_table: HashMap<String, usize>,
+    integer_literal_table: HashMap<String, usize>,
+    float_literal_table: HashMap<String, usize>,
+    token_stream: Vec<String>, // 解析后的单词串内容
 }
 
 fn main() -> io::Result<()> {
@@ -1001,3 +1085,31 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
+
+// fn main() -> io::Result<()> {
+//     let input_file = File::open("source.txt")?;
+//     let mut lexer = Lexer::new(input_file);
+
+//     let result = lexer.parse_all()?;
+
+//     println!("Identifier Table: {:?}", result.identifier_table);
+//     println!("Char Literal Table: {:?}", result.char_literal_table);
+//     println!("String Literal Table: {:?}", result.string_literal_table);
+//     println!("Integer Literal Table: {:?}", result.integer_literal_table);
+//     println!("Float Literal Table: {:?}", result.float_literal_table);
+
+
+//     println!("Token Stream:");
+//     for token in &result.token_stream {
+//         println!("{}", token);
+//     }
+
+
+//     let output_file = File::create("token_stream.txt")?;
+//     let mut writer = BufWriter::new(output_file);
+//     for token in result.token_stream {
+//         writeln!(writer, "{}", token)?;
+//     }
+
+//     Ok(())
+// }
