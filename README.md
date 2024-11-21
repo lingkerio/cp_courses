@@ -13,6 +13,12 @@
 ### 3. ParseTreeGenerator 模块
 这是一个解析树生成器，专用于上下文无关语法（CFG）。
 
+### 4. LL1Parser 模块
+这是一个LL1 parser,包含递归下降与表驱动两种方法。
+
+### 5. lexer 模块
+这是一个为rust语言实现的手写lexer，并为parser提供了相应的接口。
+
 ## 项目背景
 本项目是我在学习武汉大学的编译原理课程期间，基于课堂理论知识编写的实践性程序，旨在巩固我对编译器原理中各类核心概念的掌握。每个模块都独立运行，并且可用于分析不同的语法或表达式。
 
@@ -32,6 +38,12 @@ This module is used to classify languages based on the Chomsky Hierarchy.
 
 ### 3. ParseTreeGenerator Module
 This module generates parse trees for context-free grammars (CFG).
+
+### 4. LL1Parser Module
+This is an LL1 parser that includes both recursive descent and table-driven methods.
+
+### 5. lexer Module
+This is a hand-written lexer implemented for the Rust language, and it provides the corresponding interface for the parser.
 
 ## Project Background
 This project was developed during my study of the Compiler Principle course at Wuhan University. It is a set of practical programs built upon the theoretical knowledge acquired in class, aiming to strengthen my grasp of key concepts in compiler theory. Each module functions independently and can be used to analyze different grammars or expressions.
