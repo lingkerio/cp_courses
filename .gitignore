@@ -1,1 +1,4 @@
 cp_courses.code-workspace
+
+# ignore rust build files
+target/
