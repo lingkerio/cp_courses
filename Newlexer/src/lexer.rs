@@ -1,13 +1,30 @@
+use std::io::Read;
+
 use crate::tokens::Token;
 
-pub struct Lexer<'a> {
-    input: &'a str,
-    position: usize,
+pub struct Lexer<R: Read> {
+    reader: R,             // 文件流，减少系统调用次数
+    buffers: [Vec<u8>; 2], // 双缓冲区
+    current_buffer: usize, // 当前缓冲区索引
+    position: usize,       // 当前缓冲区内的位置
+    eof: bool,             // 文件是否已结束
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
-        Self { input, position: 0 }
+impl<R: Read> Lexer<R> {
+    const PAGESIZE: usize = 4096; // 每个缓冲区的大小
+
+    pub fn new(reader: R) -> Self {
+        let mut lexer = Self {
+            reader,
+            buffers: [vec![0; Self::PAGESIZE + 1], vec![0; Self::PAGESIZE + 1]],
+            current_buffer: 0,
+            position: 0,
+            eof: false,
+        };
+
+        // 初始化第一个缓冲区
+        lexer.fill_buffer(lexer.current_buffer).unwrap();
+        lexer
     }
 
     pub fn next_token(&mut self) -> Option<Token> {
@@ -298,19 +315,87 @@ impl<'a> Lexer<'a> {
         token
     }
 
-    fn peek_char(&self) -> Option<char> {
-        self.input[self.position..].chars().next()
+    fn fill_buffer(&mut self, buffer_index: usize) -> Result<(), std::io::Error> {
+        let buffer = &mut self.buffers[buffer_index];
+        let bytes_read = self.reader.read(&mut buffer[..Self::PAGESIZE])?;
+
+        // 设置有效数据并添加哨兵字符
+        buffer[bytes_read] = '\0' as u8;
+        if bytes_read < 4096 {
+            self.eof = true; // 标记文件结束
+        }
+        Ok(())
+    }
+
+    fn peek_char(&mut self) -> Option<char> {
+        // 获取当前缓冲区和位置
+        let buf_idx = self.current_buffer;
+        let pos = self.position;
+
+        // 如果当前字符是哨兵，切换缓冲区
+        if self.buffers[buf_idx][pos] == '\0' as u8 {
+            if self.eof {
+                return None;
+            }
+            self.switch_buffer();
+            return self.peek_char();
+        }
+
+        // 否则返回当前字符
+        Some(self.buffers[buf_idx][pos] as char)
     }
 
     fn advance(&mut self) {
-        if let Some(c) = self.peek_char() {
-            self.position += c.len_utf8();
+        let buf_idx = self.current_buffer;
+        let pos = self.position;
+
+        // 如果当前位置是哨兵字符
+        if self.buffers[buf_idx][pos] == b'\0' {
+            // 如果到达文件末尾，直接返回
+            if self.eof {
+                return;
+            }
+
+            // 切换到下一个缓冲区
+            self.switch_buffer();
+        } else {
+            // 移动到下一个位置
+            self.position += 1;
         }
+    }
+
+    fn extract_range(&self, start: usize, end: usize) -> String {
+        let mut result = String::new();
+        let mut current_buffer = self.current_buffer;
+        let mut current_position = start;
+
+        while current_position < end {
+            let buffer = &self.buffers[current_buffer];
+
+            // 查找哨兵标记的有效范围
+            let mut range_end = current_position;
+            while range_end < end && buffer[range_end] != '\0' as u8 {
+                range_end += 1;
+            }
+
+            result
+                .push_str(std::str::from_utf8(&buffer[current_position..range_end]).unwrap_or(""));
+
+            current_position = range_end;
+
+            // 如果到达哨兵字符，切换缓冲区
+            if current_position < end && buffer[current_position] == '\0' as u8 {
+                current_buffer = (current_buffer + 1) % 2;
+                current_position = 0;
+            }
+        }
+
+        result
     }
 
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek_char() {
-            if c.is_whitespace() {
+            if c.is_ascii_whitespace() {
                 self.advance();
             } else {
                 break;
@@ -318,47 +403,54 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn switch_buffer(&mut self) {
+        // 切换到下一个缓冲区
+        self.current_buffer = (self.current_buffer + 1) % 2;
+        self.position = 0;
+
+        // 如果新缓冲区为空且未到达 EOF，则填充它
+        if !self.eof {
+            self.fill_buffer(self.current_buffer).unwrap();
+        }
+    }
+
     fn read_line_comment(&mut self) -> Option<Token> {
         let start = self.position;
-
         while let Some(c) = self.peek_char() {
             if c == '\n' {
-                break; // End of line comment
+                break; // 结束行注释
             }
             self.advance();
         }
 
-        let comment = &self.input[start..self.position];
-        Some(Token::Comment(comment.to_string()))
+        let comment = self.extract_range(start, self.position);
+        Some(Token::Comment(comment))
     }
 
     fn read_block_comment(&mut self) -> Option<Token> {
         let start = self.position;
-        let mut depth = 1; // Tracks nested block comment depth
+        let mut depth = 1; // 嵌套注释深度
 
         while let Some(c) = self.peek_char() {
             if c == '/' && self.peek_ahead(1) == Some('*') {
-                // Nested block comment
                 self.advance();
                 self.advance();
                 depth += 1;
             } else if c == '*' && self.peek_ahead(1) == Some('/') {
-                // Closing block comment
                 self.advance();
                 self.advance();
                 depth -= 1;
 
                 if depth == 0 {
-                    // Comment is fully closed
-                    let comment = &self.input[start..self.position];
-                    return Some(Token::Comment(comment.to_string()));
+                    let comment = self.extract_range(start, self.position - 2);
+                    return Some(Token::Comment(comment));
                 }
             } else {
-                self.advance(); // Continue parsing the block comment
+                self.advance();
             }
         }
 
-        None // Unterminated block comment
+        None // 未终止的块注释
     }
 
     fn read_char_or_lifetime(&mut self) -> Option<Token> {
@@ -408,7 +500,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_lifetime_or_label(&mut self) -> Option<Token> {
-        let start = self.position - 1; // Include the opening `'`
+        let start = self.position - 1; // 包括开头的 `'`
 
         while let Some(c) = self.peek_char() {
             if c.is_alphanumeric() || c == '_' {
@@ -418,29 +510,25 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let lexeme = &self.input[start..self.position];
+        let lexeme = self.extract_range(start, self.position);
 
-        // Handle special cases for `'_` and `'static`
-        match lexeme {
-            "'_" => Some(Token::LifetimeOrLabel("'_".to_string())), // Special case for `'_`
-            "'static" => Some(Token::LifetimeOrLabel("'static".to_string())), // Special case for `'static`
-            _ if lexeme.starts_with("'") => {
-                // Generic lifetime or label starting with `'`
-                Some(Token::LifetimeOrLabel(lexeme.to_string()))
-            }
-            _ => None, // Invalid lifetime or label
+        match lexeme.as_str() {
+            "'_" => Some(Token::LifetimeOrLabel("'_".to_string())), // 特殊标识
+            "'static" => Some(Token::LifetimeOrLabel("'static".to_string())), // 静态生命周期
+            _ if lexeme.starts_with("'") => Some(Token::LifetimeOrLabel(lexeme)),
+            _ => None, // 无效标签
         }
     }
 
-    fn peek_ahead_is_closing_quote(&self) -> bool {
+    fn peek_ahead_is_closing_quote(&mut self) -> bool {
         if let Some(c) = self.peek_char() {
             if c == '\\' {
-                // If it's an escape sequence, check if the second character is a closing single quote
+                // 如果是转义字符，检查第二个字符是否为单引号
                 if let Some(escaped) = self.peek_ahead(2) {
                     return escaped == '\'';
                 }
             } else {
-                // If it's a normal character, check the next one for closing single quote
+                // 检查下一个字符是否为单引号
                 if let Some(next) = self.peek_ahead(1) {
                     return next == '\'';
                 }
@@ -513,7 +601,28 @@ impl<'a> Lexer<'a> {
 
     // Helper method to look ahead by a specific offset
     fn peek_ahead(&self, offset: usize) -> Option<char> {
-        self.input[self.position..].chars().nth(offset)
+        let mut buffer_idx = self.current_buffer;
+        let mut pos = self.position + offset;
+
+        // 处理跨缓冲区的情况
+        while pos >= self.buffers[buffer_idx].len() || self.buffers[buffer_idx][pos] == '\0' as u8 {
+            // 减去当前缓冲区的有效长度
+            pos -= self.buffers[buffer_idx]
+                .iter()
+                .take_while(|&&b| b != '\0' as u8)
+                .count();
+
+            // 切换到下一个缓冲区
+            buffer_idx = (buffer_idx + 1) % 2;
+
+            // 如果到达 EOF，返回 None
+            if self.eof && self.buffers[buffer_idx][0] == '\0' as u8 {
+                return None;
+            }
+        }
+
+        // 返回偏移量位置的字符
+        Some(self.buffers[buffer_idx][pos] as char)
     }
 
     fn read_identifier_or_keyword(&mut self) -> Option<Token> {
@@ -526,8 +635,8 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let lexeme = &self.input[start..self.position];
-        match lexeme {
+        let lexeme = self.extract_range(start, self.position);
+        match lexeme.as_str() {
             // 严格关键字
             "as" => Some(Token::As),
             "break" => Some(Token::Break),
@@ -596,7 +705,7 @@ impl<'a> Lexer<'a> {
     fn read_number_or_float(&mut self) -> Option<Token> {
         let start = self.position;
 
-        // 读取整数部分
+        // 整数部分
         while let Some(c) = self.peek_char() {
             if c.is_digit(10) || c == '_' {
                 self.advance();
@@ -608,6 +717,7 @@ impl<'a> Lexer<'a> {
         // 检查是否是浮点数
         if self.peek_char() == Some('.') {
             self.advance(); // 跳过小数点
+
             while let Some(c) = self.peek_char() {
                 if c.is_digit(10) || c == '_' {
                     self.advance();
@@ -620,12 +730,13 @@ impl<'a> Lexer<'a> {
             if let Some(c) = self.peek_char() {
                 if c == 'e' || c == 'E' {
                     self.advance(); // 跳过 e 或 E
+
                     if let Some(sign) = self.peek_char() {
                         if sign == '+' || sign == '-' {
                             self.advance(); // 跳过正负号
                         }
                     }
-                    // 读取指数部分
+
                     while let Some(c) = self.peek_char() {
                         if c.is_digit(10) || c == '_' {
                             self.advance();
@@ -637,22 +748,20 @@ impl<'a> Lexer<'a> {
             }
 
             // 返回浮点字面量
-            let lexeme = &self.input[start..self.position];
-            return Some(Token::FloatLiteral(lexeme.to_string()));
+            let lexeme = self.extract_range(start, self.position);
+            return Some(Token::FloatLiteral(lexeme));
         }
 
-        // 如果没有小数点或科学计数法，则返回整数字面量
-        let lexeme = &self.input[start..self.position];
-        Some(Token::IntegerLiteral(lexeme.to_string()))
+        // 返回整数字面量
+        let lexeme = self.extract_range(start, self.position);
+        Some(Token::IntegerLiteral(lexeme))
     }
 
     fn read_float_starting_with_dot(&mut self) -> Option<Token> {
         let start = self.position;
 
-        // 跳过小数点
-        self.advance();
+        self.advance(); // 跳过小数点
 
-        // 读取小数部分
         while let Some(c) = self.peek_char() {
             if c.is_digit(10) || c == '_' {
                 self.advance();
@@ -665,12 +774,13 @@ impl<'a> Lexer<'a> {
         if let Some(c) = self.peek_char() {
             if c == 'e' || c == 'E' {
                 self.advance(); // 跳过 e 或 E
+
                 if let Some(sign) = self.peek_char() {
                     if sign == '+' || sign == '-' {
                         self.advance(); // 跳过正负号
                     }
                 }
-                // 读取指数部分
+
                 while let Some(c) = self.peek_char() {
                     if c.is_digit(10) || c == '_' {
                         self.advance();
@@ -682,7 +792,7 @@ impl<'a> Lexer<'a> {
         }
 
         // 返回浮点字面量
-        let lexeme = &self.input[start..self.position];
-        Some(Token::FloatLiteral(lexeme.to_string()))
+        let lexeme = self.extract_range(start, self.position);
+        Some(Token::FloatLiteral(lexeme))
     }
 }
