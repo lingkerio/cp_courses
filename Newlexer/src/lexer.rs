@@ -8,6 +8,8 @@ pub struct Lexer<R: Read> {
     current_buffer: usize, // 当前缓冲区索引
     position: usize,       // 当前缓冲区内的位置
     eof: bool,             // 文件是否已结束
+    row: usize,            // 当前行号
+    col: usize,            // 当前列号
 }
 
 impl<R: Read> Lexer<R> {
@@ -20,6 +22,8 @@ impl<R: Read> Lexer<R> {
             current_buffer: 0,
             position: 0,
             eof: false,
+            row: 1,
+            col: 1,
         };
 
         // 初始化第一个缓冲区
@@ -222,7 +226,6 @@ impl<R: Read> Lexer<R> {
                             _ => Some(Token::DotDot),
                         }
                     }
-                    Some('0'..='9') => self.read_float_starting_with_dot(),
                     _ => Some(Token::Dot),
                 }
             }
@@ -358,9 +361,17 @@ impl<R: Read> Lexer<R> {
 
             // 切换到下一个缓冲区
             self.switch_buffer();
+            return;
+        }
+
+        // 更新位置和行列号
+        let c = self.buffers[buf_idx][pos] as char;
+        self.position += 1;
+        if c == '\n' {
+            self.row += 1;
+            self.col = 1;
         } else {
-            // 移动到下一个位置
-            self.position += 1;
+            self.col += 1;
         }
     }
 
@@ -431,6 +442,9 @@ impl<R: Read> Lexer<R> {
         let start = self.position;
         let mut depth = 1; // 嵌套注释深度
 
+        let start_row = self.row;
+        let start_col = self.col;
+
         while let Some(c) = self.peek_char() {
             if c == '/' && self.peek_ahead(1) == Some('*') {
                 self.advance();
@@ -450,54 +464,100 @@ impl<R: Read> Lexer<R> {
             }
         }
 
-        None // 未终止的块注释
+        Some(Token::Error(format!(
+            "Unterminated block comment starting at {}:{}",
+            start_row, start_col
+        )))
+        // 未终止的块注释
     }
 
     fn read_char_or_lifetime(&mut self) -> Option<Token> {
         self.advance(); // Skip the opening single quote
 
+        let start_row = self.row;
+        let start_col = self.col;
+
         if let Some(next_char) = self.peek_char() {
-            if next_char == '\\' || self.peek_ahead_is_closing_quote() {
-                // Case 1: Potential character literal
-                self.read_char_literal_body()
+            if next_char == '\\' {
+                // 检查是否为转义字符字面量
+                self.advance(); // Skip the backslash
+                if let Some(escaped_char) = self.read_escape_sequence() {
+                    // 检查关闭单引号
+                    if self.peek_char() == Some('\'') {
+                        self.advance(); // Skip the closing single quote
+                        Some(Token::CharLiteral(escaped_char))
+                    } else {
+                        Some(Token::Error(format!(
+                            "Unterminated character literal starting at {}:{}",
+                            start_row, start_col
+                        )))
+                    }
+                } else {
+                    Some(Token::Error(format!(
+                        "Invalid escape sequence in character literal starting at {}:{}",
+                        start_row, start_col
+                    )))
+                }
+            } else if next_char != '\'' {
+                // 检查普通字符字面量
+                let char_literal = next_char;
+                self.advance(); // Skip the character
+                if self.peek_char() == Some('\'') {
+                    self.advance(); // Skip the closing single quote
+                    Some(Token::CharLiteral(char_literal))
+                } else {
+                    Some(Token::Error(format!(
+                        "Unterminated character literal starting at {}:{}",
+                        start_row, start_col
+                    )))
+                }
             } else if next_char.is_alphabetic() || next_char == '_' {
-                // Case 2: Potential lifetime or label
+                // 检查是否为潜在的生存期或标签
                 self.read_lifetime_or_label()
             } else {
-                None // Invalid input (e.g., just a single quote without valid content)
+                Some(Token::Error(format!(
+                    "Invalid character literal starting at {}:{}",
+                    start_row, start_col
+                )))
             }
         } else {
-            None // Invalid input (e.g., end of file after single quote)
+            Some(Token::Error(format!(
+                "Unterminated character literal starting at {}:{}",
+                start_row, start_col
+            )))
         }
     }
 
-    fn read_char_literal_body(&mut self) -> Option<Token> {
-        let mut character = None;
+    // fn read_char_literal_body(&mut self) -> Option<Token> {
+    //     let mut character = None;
 
-        if let Some(c) = self.peek_char() {
-            if c == '\\' {
-                // Handle escape sequence
-                self.advance();
-                if let Some(escaped) = self.read_escape_sequence() {
-                    character = Some(escaped);
-                } else {
-                    return None; // Invalid escape sequence
-                }
-            } else if c != '\'' {
-                // Normal character
-                self.advance();
-                character = Some(c);
-            }
-        }
+    //     if let Some(c) = self.peek_char() {
+    //         if c == '\\' {
+    //             // Handle escape sequence
+    //             self.advance();
+    //             if let Some(escaped) = self.read_escape_sequence() {
+    //                 character = Some(escaped);
+    //             } else {
+    //                 return Some(Token::Error(format!(
+    //                     "Invalid escape sequence in character literal at {}:{}",
+    //                     self.row, self.col
+    //                 ))); // Invalid escape sequence
+    //             }
+    //         } else if c != '\'' {
+    //             // Normal character
+    //             self.advance();
+    //             character = Some(c);
+    //         }
+    //     }
 
-        // Ensure closing quote
-        if self.peek_char() == Some('\'') {
-            self.advance(); // Skip the closing quote
-            character.map(Token::CharLiteral)
-        } else {
-            None // Invalid char literal (e.g., unclosed single quote)
-        }
-    }
+    //     // Ensure closing quote
+    //     if self.peek_char() == Some('\'') {
+    //         self.advance(); // Skip the closing quote
+    //         character.map(Token::CharLiteral)
+    //     } else {
+    //         None // Invalid char literal (e.g., unclosed single quote)
+    //     }
+    // }
 
     fn read_lifetime_or_label(&mut self) -> Option<Token> {
         let start = self.position - 1; // 包括开头的 `'`
@@ -520,27 +580,30 @@ impl<R: Read> Lexer<R> {
         }
     }
 
-    fn peek_ahead_is_closing_quote(&mut self) -> bool {
-        if let Some(c) = self.peek_char() {
-            if c == '\\' {
-                // 如果是转义字符，检查第二个字符是否为单引号
-                if let Some(escaped) = self.peek_ahead(2) {
-                    return escaped == '\'';
-                }
-            } else {
-                // 检查下一个字符是否为单引号
-                if let Some(next) = self.peek_ahead(1) {
-                    return next == '\'';
-                }
-            }
-        }
+    // fn peek_ahead_is_closing_quote(&mut self) -> bool {
+    //     if let Some(c) = self.peek_char() {
+    //         if c == '\\' {
+    //             // 如果是转义字符，检查第二个字符是否为单引号
+    //             if let Some(escaped) = self.peek_ahead(2) {
+    //                 return escaped == '\'';
+    //             }
+    //         } else {
+    //             // 检查下一个字符是否为单引号
+    //             if let Some(next) = self.peek_ahead(1) {
+    //                 return next == '\'';
+    //             }
+    //         }
+    //     }
 
-        false
-    }
+    //     false
+    // }
 
     fn read_string_literal(&mut self) -> Option<Token> {
         self.advance(); // Skip the opening quote
         let mut lexeme = String::new();
+
+        let start_row = self.row;
+        let start_col = self.col;
 
         while let Some(c) = self.peek_char() {
             if c == '"' {
@@ -552,7 +615,10 @@ impl<R: Read> Lexer<R> {
                 if let Some(escaped) = self.read_escape_sequence() {
                     lexeme.push(escaped);
                 } else {
-                    return None; // Invalid escape sequence
+                    return Some(Token::Error(format!(
+                        "Invalid escape sequence in character literal at {}:{}",
+                        self.row, self.col
+                    ))); // Invalid escape sequence // Invalid escape sequence
                 }
             } else {
                 // Normal character
@@ -561,7 +627,10 @@ impl<R: Read> Lexer<R> {
             }
         }
 
-        None // Unterminated string literal
+        Some(Token::Error(format!(
+            "Unterminated string literal starting at {}:{}",
+            start_row, start_col
+        ))) // Unterminated string literal
     }
 
     fn read_escape_sequence(&mut self) -> Option<char> {
@@ -627,6 +696,14 @@ impl<R: Read> Lexer<R> {
 
     fn read_identifier_or_keyword(&mut self) -> Option<Token> {
         let start = self.position;
+        if let Some(c) = self.peek_char() {
+            if c == '_' {
+                return Some(Token::Error(format!(
+                    "Invalid identifier starting with '_' at {}:{}",
+                    self.row, self.col
+                )));
+            }
+        }
         while let Some(c) = self.peek_char() {
             if c.is_alphanumeric() || c == '_' {
                 self.advance();
@@ -703,96 +780,106 @@ impl<R: Read> Lexer<R> {
     }
 
     fn read_number_or_float(&mut self) -> Option<Token> {
+        let start_row = self.row;
+        let start_col = self.col;
         let start = self.position;
 
-        // 整数部分
+        let mut seen_dot = false;
+        let mut seen_exponent = false;
+        let mut has_digits = false;
+
         while let Some(c) = self.peek_char() {
-            if c.is_digit(10) || c == '_' {
-                self.advance();
-            } else {
-                break;
-            }
-        }
-
-        // 检查是否是浮点数
-        if self.peek_char() == Some('.') {
-            self.advance(); // 跳过小数点
-
-            while let Some(c) = self.peek_char() {
-                if c.is_digit(10) || c == '_' {
+            match c {
+                '0'..='9' => {
+                    has_digits = true;
                     self.advance();
-                } else {
-                    break;
                 }
-            }
+                '_' => {
+                    // 下划线不能作为首字符，且前一个字符必须是数字
+                    if !has_digits {
+                        return Some(Token::Error(format!(
+                            "Invalid use of '_' in number at {}:{}",
+                            self.row, self.col
+                        )));
+                    }
+                    self.advance();
+                }
+                '.' => {
+                    // 小数点不能重复出现
+                    if seen_dot {
+                        return Some(Token::Error(format!(
+                            "Unexpected '.' in number starting at {}:{}",
+                            start_row, start_col
+                        )));
+                    }
+                    if seen_exponent {
+                        return Some(Token::Error(format!(
+                            "Unexpected '.' in exponent starting at {}:{}",
+                            start_row, start_col
+                        )));
+                    }
+                    seen_dot = true;
+                    self.advance();
+                }
+                'e' | 'E' => {
+                    // 指数部分不能重复
+                    if seen_exponent {
+                        return Some(Token::Error(format!(
+                            "Unexpected '{}' in number starting at {}:{}",
+                            c, start_row, start_col
+                        )));
+                    }
+                    if !has_digits {
+                        return Some(Token::Error(format!(
+                            "Exponent '{}' must follow a number at {}:{}",
+                            c, self.row, self.col
+                        )));
+                    }
+                    seen_exponent = true;
+                    has_digits = false; // 指数后必须跟数字
+                    self.advance();
 
-            // 检查是否是科学计数法
-            if let Some(c) = self.peek_char() {
-                if c == 'e' || c == 'E' {
-                    self.advance(); // 跳过 e 或 E
-
+                    // 检查正负号
                     if let Some(sign) = self.peek_char() {
                         if sign == '+' || sign == '-' {
-                            self.advance(); // 跳过正负号
+                            self.advance();
                         }
                     }
-
-                    while let Some(c) = self.peek_char() {
-                        if c.is_digit(10) || c == '_' {
+                }
+                _ if c.is_alphanumeric() => {
+                    // 非法后缀：捕获整个后缀部分
+                    let suffix_start = self.position;
+                    while let Some(next_c) = self.peek_char() {
+                        if next_c.is_alphanumeric() || next_c == '_' {
                             self.advance();
                         } else {
                             break;
                         }
                     }
+                    let suffix = self.extract_range(suffix_start, self.position);
+                    return Some(Token::Error(format!(
+                        "Invalid suffix '{}' for number literal starting at {}:{}",
+                        suffix, start_row, start_col
+                    )));
                 }
+                _ => break, // 非数字字符，结束解析
             }
-
-            // 返回浮点字面量
-            let lexeme = self.extract_range(start, self.position);
-            return Some(Token::FloatLiteral(lexeme));
         }
 
-        // 返回整数字面量
+        // 检查数字合法性
+        if !has_digits {
+            return Some(Token::Error(format!(
+                "Incomplete number literal starting at {}:{}",
+                start_row, start_col
+            )));
+        }
+
+        // 返回整数字面量或浮点数字面量
         let lexeme = self.extract_range(start, self.position);
-        Some(Token::IntegerLiteral(lexeme))
-    }
-
-    fn read_float_starting_with_dot(&mut self) -> Option<Token> {
-        let start = self.position;
-
-        self.advance(); // 跳过小数点
-
-        while let Some(c) = self.peek_char() {
-            if c.is_digit(10) || c == '_' {
-                self.advance();
-            } else {
-                break;
-            }
+        if seen_dot || seen_exponent {
+            Some(Token::FloatLiteral(lexeme))
+        } else {
+            Some(Token::IntegerLiteral(lexeme))
         }
-
-        // 检查是否是科学计数法
-        if let Some(c) = self.peek_char() {
-            if c == 'e' || c == 'E' {
-                self.advance(); // 跳过 e 或 E
-
-                if let Some(sign) = self.peek_char() {
-                    if sign == '+' || sign == '-' {
-                        self.advance(); // 跳过正负号
-                    }
-                }
-
-                while let Some(c) = self.peek_char() {
-                    if c.is_digit(10) || c == '_' {
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 返回浮点字面量
-        let lexeme = self.extract_range(start, self.position);
-        Some(Token::FloatLiteral(lexeme))
     }
 }

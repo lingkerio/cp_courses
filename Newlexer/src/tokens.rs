@@ -39,6 +39,9 @@ pub enum Token {
     // Delimiters
     OpenBrace, CloseBrace, OpenBracket, CloseBracket, OpenParen, CloseParen,
 
+    // Error
+    Error(String),
+
     // Unknown (fallback case)
     Unknown(char),
 }
