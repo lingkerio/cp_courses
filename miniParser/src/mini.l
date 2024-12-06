@@ -10,6 +10,8 @@ int colno = 1;
 
 %%
 
+"//".*               { colno = 1; }
+
 [0-9]+                  { colno += yyleng;return NUM; }
 
 
