@@ -38,6 +38,7 @@ statement:
     | while_statement
     | SEMICOLON
     | error SEMICOLON               { yyerrok; printf("语法错误，跳过错误的语句\n"); }
+    | error RBRACE                  { yyerrok; printf("语法错误，跳过到下一个语句块\n"); }
     ;
 
 assignment:
@@ -54,7 +55,7 @@ if_statement:
 
 while_statement:
       WHILE LPAREN LogicalExpression RPAREN block
-        | WHILE LPAREN LogicalExpression RPAREN statement
+      | WHILE LPAREN LogicalExpression RPAREN statement
     ;
 
 block:
