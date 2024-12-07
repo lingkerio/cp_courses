@@ -16,6 +16,8 @@ BISON_OUTPUT_H = $(BUILD_DIR)/mini.tab.h
 MAIN = $(SRC_DIR)/main.c
 LEX_SRC = $(SRC_DIR)/mini.l
 BISON_SRC = $(SRC_DIR)/mini.y
+AST = $(SRC_DIR)/ast.c
+SYMBOL_TABLE = $(SRC_DIR)/symbolTable.c
 INPUT_FILE = $(TEST_DIR)/input.mini
 
 all: $(TARGET)
@@ -27,7 +29,7 @@ $(LEX_OUTPUT): $(LEX_SRC)
 	$(FLEX) -o $(LEX_OUTPUT) $(LEX_SRC)
 
 $(TARGET): $(LEX_OUTPUT) $(BISON_OUTPUT_C) $(MAIN)
-	$(CC) $(CFLAGS) $(MAIN) $(LEX_OUTPUT) $(BISON_OUTPUT_C) -o $(TARGET) -lfl
+	$(CC) $(CFLAGS) $(MAIN) $(AST) $(SYMBOL_TABLE) $(LEX_OUTPUT) $(BISON_OUTPUT_C) -o $(TARGET) -lfl
 
 clean:
 	rm -f $(BUILD_DIR)/* $(LEX_OUTPUT) $(BISON_OUTPUT_C) $(BISON_OUTPUT_H)

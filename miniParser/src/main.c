@@ -1,7 +1,11 @@
 #include <stdio.h>
+#include "ast.h"
+#include "symbolTable.h"
 
 extern int yyparse(void);
 extern FILE* yyin;
+extern ASTNode* root;
+extern SymbolTable* symbolTable;
 
 int main(int argc, char* argv[])
 {
